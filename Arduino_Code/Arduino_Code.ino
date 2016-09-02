@@ -8,274 +8,454 @@
 
 #include <LiquidCrystal.h>
 
-#define TICK 1000;
+#define TICK 1000  //1000 milliseconds (1 second)
+#define FARRIGHTCURSOR 15
+#define SNOOZETIME 9  //This will allow for 9 minutes of snoozing
+#define ALARMSWITCHPIN 7
+#define SNOOZEBUTTONPIN 8
 
-//Stole these custom large font characters from http://forum.arduino.cc/index.php?topic=8882.0
-byte LT[8] = 
-{B00111, B01111, B11111, B11111, B11111, B11111, B11111, B11111};
-byte UB[8] =
-{B11111, B11111, B11111, B00000, B00000, B00000, B00000, B00000};
-byte RT[8] =
-{B11100, B11110, B11111,B11111,B11111,B11111,B11111,B11111};
-byte LL[8] =
-{B11111,B11111,B11111,B11111,B11111,B11111,B01111,B00111};
-byte LB[8] =
-{B00000,B00000,B00000,B00000,B00000,B11111,B11111,B11111};
-byte LR[8] =
-{B11111,B11111,B11111,B11111,B11111,B11111,B11110,B11100};
-byte MB[8] =
-{B11111,B11111,B11111,B00000,B00000,B00000,B11111,B11111};
-byte block[8] =
-{B11111,B11111,B11111,B11111,B11111,B11111,B11111,B11111};
+//Inspired by the characters from http://forum.arduino.cc/index.php?topic=8882.0
+byte Colon[8] = 
+{
+ B00000,
+ B00000,
+ B01110,
+ B01110,
+ B01110,
+ B00000,
+ B00000,
+ B00000
+};
+byte UpperThird[8] =
+{
+ B11111,
+ B11111,
+ B11111,
+ B00000,
+ B00000,
+ B00000,
+ B00000,
+ B00000
+};
+byte LowerThird[8] =
+{
+ B00000,
+ B00000,
+ B00000,
+ B00000,
+ B00000,
+ B11111,
+ B11111,
+ B11111
+};
+
+byte UpperAndBottom[8] =
+{
+ B11111,
+ B11111,
+ B11111,
+ B00000,
+ B00000,
+ B00000,
+ B11111,
+ B11111
+};
+byte UpperBitBottomThick[8] =
+{
+ B11111,
+ B00000,
+ B00000,
+ B00000,
+ B00000,
+ B11111,
+ B11111,
+ B11111
+};
+byte UpperBit[8] = 
+{
+  B11111,
+  B00000,
+  B00000,
+  B00000,
+  B00000,
+  B00000,
+  B00000,
+  B00000
+};
+byte BottomThickOnly[8] = 
+{
+  B00000,
+  B00000,
+  B00000,
+  B00000,
+  B00000,
+  B11111,
+  B11111,
+  B11111,
+};
+byte AlarmBell[8] =
+{
+  B00100,
+  B01110,
+  B01110,
+  B01110,
+  B11111,
+  B00000,
+  B00100,
+  B00000,
+};
 
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2); //Establishes the LCD with proper pins
 
 //time variables
-int hours;
-int minutes;
-int seconds;
-bool AM;
+typedef struct {
+  int hours;
+  int minutes;
+  int seconds;
+  bool AM;
+  
+} TheTime;
 
-int cursorXPosition = 0;
-int numberToPrint = 0;
+typedef struct {
+  int hour;
+  int minute;
+  bool AM;
+} Alarm;
 
-int alarmHour;
-int alarmMinute;
-bool alarmAM;
+enum AlarmStates {
+  Off,
+  Armed,
+  Alarming,
+  Snoozing,
+};
 
-bool alarmOn;
+//Instances
+Alarm currentAlarm;
+TheTime currentTime;
+AlarmStates alarmState;
 
+//Globals
 unsigned long targetMillis = 0;
-String timeString;
+int timeSnoozing;
+bool alarmSwitch;
+bool snoozeButton;
 
 void setup() {
   //Store the custom blocks on the LCD display
-  lcd.createChar(0,LT);
-  lcd.createChar(1,UB);
-  lcd.createChar(2,RT);
-  lcd.createChar(3,LL);
-  lcd.createChar(4,LB);
-  lcd.createChar(5,LR);
-  lcd.createChar(6,MB);
-  lcd.createChar(7,block);
+  lcd.createChar(0,Colon);
+  lcd.createChar(1,UpperThird);
+  lcd.createChar(2,LowerThird);
+  lcd.createChar(3,UpperAndBottom);
+  lcd.createChar(4,UpperBitBottomThick);
+  lcd.createChar(5,UpperBit);
+  lcd.createChar(6,BottomThickOnly);
+  lcd.createChar(7,AlarmBell);
+
+  pinMode(ALARMSWITCHPIN, INPUT_PULLUP);
+  pinMode(SNOOZEBUTTONPIN, INPUT_PULLUP);
+  
   //Set up the lcd number of columns and rows.
   lcd.begin(16, 2);
-  Serial.begin(9600);   //It would be good to pull this out later if I don't need it.
+//  Serial.begin(9600); //For debugging
 
-  //initializes time to midnight
-  hours = 12;
-  minutes = 00;
-  seconds = 00;
-  AM = true;
+  //Initializes time
+  currentTime.hours = 7;
+  currentTime.minutes = 45;
+  currentTime.seconds = 59;
+  currentTime.AM = false;
+
+  //Initializes an alarm
+  currentAlarm.hour = 7;
+  currentAlarm.minute = 0;
+
+  //Initializes alarm state
+  alarmState = Off;
 
   targetMillis = TICK;  //Increment the target millisecond counter
-  timeString = "";
 }
 
 void loop() {
   if ((long)( millis() - targetMillis ) >= 0) { //A second has elapsed
-    seconds += 1;
-    if (seconds >= 60) {  //End of a minute
-      seconds = 0;
-      minutes += 1;
+    currentTime.seconds += 1;
+    if (currentTime.seconds >= 60) {  //End of a minute
+      UpdateMinute();
     }
-    if (minutes >= 60) { //End of an hour
-      minutes = 0;
-      hours += 1;
-      if (hours == 12) {  //we just hit midnight or noon
-        AM = !AM; //flip the boolean for AM
+    targetMillis += TICK; 
+  }
+
+  //Check the pins
+  alarmSwitch = !digitalRead(ALARMSWITCHPIN);
+  snoozeButton = digitalRead(SNOOZEBUTTONPIN);
+  CheckAlarm();
+}
+
+void UpdateMinute() {
+  currentTime.seconds = 0;
+  currentTime.minutes++;
+  timeSnoozing++;
+  if (currentTime.minutes >= 60) { //End of an hour
+    currentTime.minutes = 0;
+    currentTime.hours++;
+    if (currentTime.hours == 12) {  //we just hit midnight or noon
+      currentTime.AM = !currentTime.AM; //flip the boolean for AM
       }
     }
-    if (hours > 12) { //12 hour loop is over
-      hours = 1;
-    }
-    targetMillis += TICK;
-//    lcd.clear();
-//    lcd.home();
+  if (currentTime.hours > 12) { //12 hour loop is over
+    currentTime.hours = 1;
+  }
+  PrintTime();  //Puts the new minute up on the display
+}
 
-    printBigDigit(numberToPrint, cursorXPosition);
-    numberToPrint++;
-    cursorXPosition += 4;
-    
-//    int hoursTens = hours/10;
-//    int hoursOnes = hours%10;
-//    if(hoursTens > 0) {
-//      Serial.print("!");
-//      printBigDigit(hoursTens);
-//    }
-//    //printBigDigit(hoursOnes);
-    
+void PrintTime() {
+  //Prep display
+  lcd.clear();
+  lcd.home();
+  int cursorX = 0;
+  
+  //Prep numbers to print
+  int hoursTens = currentTime.hours/10;
+  int hoursOnes = currentTime.hours%10;
+  int minuteTens = currentTime.minutes/10;
+  int minuteOnes = currentTime.minutes%10;
 
-    
-//    timeString = "";  //Clear the string so we can build it
-//    timeString += hours;
-//    timeString += ":";
-//    if (minutes < 10) {
-//      timeString += "0";
-//    }
-//    timeString += minutes;
-//    timeString += ":";
-//    if (seconds < 10) {
-//      timeString += "0";
-//    }
-//    timeString += seconds;
-//    if (AM) {
-//      timeString += " AM";
-//    } else {
-//      timeString += " PM";
-//    }
-//    lcd.clear();
-//    lcd.home();
-//    lcd.print(timeString);
+  if (hoursTens > 0) {  //If the tens place in hrs has a value, print it and move the cursor. Otherwise just move the cursor
+    PrintBigDigit(hoursTens, cursorX);
+  }
+  cursorX += 3; //Only move over 3 here since the 1 takes up two places.
+  PrintBigDigit(hoursOnes, cursorX);
+  cursorX += 3; //Only move 3 since we'll put the colon right next to the ones hour digit.
+  PrintColon(cursorX);
+  cursorX += 1;
+  PrintBigDigit(minuteTens, cursorX);
+  cursorX += 4;
+  PrintBigDigit(minuteOnes, cursorX);
+  cursorX += 3;
+  PrintAMPM(cursorX, currentTime.AM);
+  cursorX += 1;
+  PrintBell(cursorX);
+}
+
+void PrintColon(int x) {
+ lcd.setCursor(x, 0); //Go to the correct X position, top half
+ lcd.write(byte(0));
+ lcd.setCursor(x, 1); //Go to the bottom row
+ lcd.write(byte(0));
+}
+
+void PrintBell(int x) {
+  lcd.setCursor(x,1); //Go to the bottom half, we'll use upper half for AM/PM
+  lcd.write(7);
+}
+
+void PrintAMPM(int x, bool ItIsAM) {
+  lcd.setCursor(x, 0); //Top half
+  if (ItIsAM) {
+    lcd.write("AM");
+  } else {
+    lcd.write("PM");
   }
 }
 
-void printBigDigit(int digit, int cursorX) {
+void CheckAlarm() {
+   switch(alarmState) {
+    case Off:
+      if(alarmSwitch) { //Alarm is turned on
+        alarmState = Armed;
+      }
+      break;
+     case Armed:
+      if(!alarmSwitch) { //Alarm is turned off
+        alarmState = Off;
+      }
+      if(AlarmTime()) {
+        PlayAlarm();
+        alarmState = Alarming;
+      }
+      break;
+     case Alarming:
+      if(snoozeButton) { //User hit the snooze button
+        PauseAlarm();
+        alarmState = Snoozing;
+        timeSnoozing = 0; //Reset the snooze timer. It gets updated in the minute updater.
+      }
+      if(!alarmSwitch) { //Alarm is turned off
+        alarmState = Off;
+      }
+      break;
+     case Snoozing:
+      if(timeSnoozing >= SNOOZETIME) {
+        PlayAlarm();
+        alarmState = Alarming;
+      }
+      if(!alarmSwitch) { //Alarm is turned off
+        alarmState = Off;
+      }
+      break;
+   }
+}
+
+bool AlarmTime() {
+  bool TimeForAlarm = false;
+  if (currentTime.hours == currentAlarm.hour && currentTime.minutes == currentAlarm.minute && currentTime.AM == currentAlarm.AM) { //time matches
+    TimeForAlarm = true;
+  }
+  return TimeForAlarm;
+}
+
+void PlayAlarm() {
+  //play the music
+}
+
+void PauseAlarm() {
+  //Pause the music (reset the volume?)
+}
+
+void PrintBigDigit(int digit, int x) {
   switch(digit) {
       case 0:
-        custom0(cursorX);
+        Custom0(x);
         break;     
       case 1:
-        custom1(cursorX);
+        Custom1(x);
         break;
       case 2:
-        custom2(cursorX);
+        Custom2(x);
         break;
       case 3:
-        custom3(cursorX);
+        Custom3(x);
         break;
       case 4:
-        custom4(cursorX);
+        Custom4(x);
         break;
       case 5:
-        custom5(cursorX);
+        Custom5(x);
         break;
       case 6:
-        custom6(cursorX);
+        Custom6(x);
         break;
       case 7:
-        custom7(cursorX);
+        Custom7(x);
         break;
       case 8:
-        custom8(cursorX);
+        Custom8(x);
         break;
       case 9:
-        custom9(cursorX);
+        Custom9(x);
         break;
     }
 }
 
 //Functions to display the large font numbers
-void custom0(int cursor)
+void Custom0(int x)
 { // uses segments to build the number 0
- lcd.setCursor(cursor,0); // set cursor to column 0, line 0 (first row)
- lcd.write(byte(0));  // call each segment to create
- lcd.write(1);  // top half of the number
- lcd.write(2);
- lcd.setCursor(cursor, 1); // set cursor to colum 0, line 1 (second row)
- lcd.write(3);  // call each segment to create
- lcd.write(4);  // bottom half of the number
- lcd.write(5);
-}
-
-void custom1(int cursor)
-{
- lcd.setCursor(cursor,0);
+ lcd.setCursor(x, 0); // set cursor to column 0, line 0 (first row)
+ lcd.write(255);  // Next 3 lines are the 3 columns of the upper half of the number
  lcd.write(1);
+ lcd.write(255);
+ lcd.setCursor(x, 1); // set cursor to colum 0, line 1 (second row)
+ lcd.write(255);  // Next 3 lines are the columns of the bottom half
  lcd.write(2);
- lcd.setCursor(cursor,1);
- lcd.write(4);
- lcd.write(7);
- lcd.write(4);
+ lcd.write(255);
 }
 
-void custom2(int cursor)
+void Custom1(int x)
 {
- lcd.setCursor(cursor,0);
- lcd.write(6);
- lcd.write(6);
- lcd.write(2);
- lcd.setCursor(cursor, 1);
+ lcd.setCursor(x,0);
+ lcd.write(1);
+ lcd.write(255);
+ lcd.setCursor(x+1,1);  //The +1 will bump over 1 column
+ lcd.write(255);
+}
+
+void Custom2(int x)
+{
+ lcd.setCursor(x,0);
  lcd.write(3);
- lcd.write(4);
- lcd.write(4);
-}
-
-void custom3(int cursor)
-{
- lcd.setCursor(cursor,0);
- lcd.write(6);
- lcd.write(6);
- lcd.write(2);
- lcd.setCursor(cursor, 1);
- lcd.write(4);
- lcd.write(4);
- lcd.write(5); 
-}
-
-void custom4(int cursor)
-{
- lcd.setCursor(cursor,0);
  lcd.write(3);
+ lcd.write(255);
+ lcd.setCursor(x, 1);
+ lcd.write(255);
  lcd.write(4);
- lcd.write(7);
- lcd.setCursor(cursor + 2, 1);
- lcd.write(7);
+ lcd.write(4);
 }
 
-void custom5(int cursor)
+void Custom3(int x)
 {
- lcd.setCursor(cursor,0);
+ lcd.setCursor(x,0);
  lcd.write(3);
- lcd.write(6);
- lcd.write(6);
- lcd.setCursor(cursor, 1);
- lcd.write(4);
- lcd.write(4);
- lcd.write(5);
-}
-
-void custom6(int cursor)
-{
- lcd.setCursor(cursor,0);
- lcd.write(byte(0));
- lcd.write(6);
- lcd.write(6);
- lcd.setCursor(cursor, 1);
  lcd.write(3);
+ lcd.write(255);
+ lcd.setCursor(x, 1);
  lcd.write(4);
- lcd.write(5);
+ lcd.write(4);
+ lcd.write(255); 
 }
 
-void custom7(int cursor)
+void Custom4(int x)
 {
- lcd.setCursor(cursor,0);
+ lcd.setCursor(x,0);
+ lcd.write(255);
+ lcd.write(6);
+ lcd.write(255);
+ lcd.setCursor(x+2, 1);
+ lcd.write(255);
+}
+
+void Custom5(int x)
+{
+ lcd.setCursor(x,0);
+ lcd.write(255);
+ lcd.write(3);
+ lcd.write(3);
+ lcd.setCursor(x, 1);
+ lcd.write(4);
+ lcd.write(4);
+ lcd.write(255);
+}
+
+void Custom6(int x)
+{
+ lcd.setCursor(x,0);
+ lcd.write(255);
+ lcd.write(3);
+ lcd.write(3);
+ lcd.setCursor(x, 1);
+ lcd.write(255);
+ lcd.write(4);
+ lcd.write(255);
+}
+
+void Custom7(int x)
+{
+ lcd.setCursor(x,0);
  lcd.write(1);
  lcd.write(1);
- lcd.write(2);
- lcd.setCursor(cursor + 2, 1);
- lcd.write(7);
+ lcd.write(255);
+ lcd.setCursor(x+2, 1);
+ lcd.write(255);
 }
 
-void custom8(int cursor)
+void Custom8(int x)
 {
- lcd.setCursor(cursor,0);
- lcd.write(byte(0));
- lcd.write(6);
- lcd.write(2);
- lcd.setCursor(cursor, 1);
+ lcd.setCursor(x,0);
+ lcd.write(255);
  lcd.write(3);
+ lcd.write(255);
+ lcd.setCursor(x, 1);
+ lcd.write(255);
  lcd.write(4);
- lcd.write(5);
+ lcd.write(255);
 }
 
-void custom9(int cursor)
+void Custom9(int x)
 {
- lcd.setCursor(cursor,0);
- lcd.write(byte(0));
- lcd.write(6);
- lcd.write(2);
- lcd.setCursor(cursor + 2, 1);
- lcd.write(7);
+ lcd.setCursor(x,0);
+ lcd.write(255);
+ lcd.write(3);
+ lcd.write(255);
+ lcd.setCursor(x, 1);
+ lcd.write(5);
+ lcd.write(5);
+ lcd.write(255);
 }
 
