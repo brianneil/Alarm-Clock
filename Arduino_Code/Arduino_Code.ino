@@ -6,13 +6,19 @@
     Uses code from: https://www.arduino.cc/en/Tutorial/HelloWorld
 */
 
+//Includes for the display + MP3 player
 #include <LiquidCrystal.h>
+#include <SPI.h>           // SPI library
+#include <SdFat.h>         // SDFat Library
+#include <SdFatUtil.h>     // SDFat Util Library
+#include <SFEMP3Shield.h>  // Mp3 Shield Library
 
 #define TICK 1000  //1000 milliseconds (1 second)
-#define FARRIGHTCURSOR 15
 #define SNOOZETIME 2  //This will allow for X minutes of snoozing
-#define ALARMSWITCHPIN 7
-#define SNOOZEBUTTONPIN 8
+#define ALARMSWITCHPIN 4
+#define SNOOZEBUTTONPIN 3
+#define LEFT 0
+#define RIGHT 1
 
 //Inspired by the characters from http://forum.arduino.cc/index.php?topic=8882.0
 byte Colon[8] = 
@@ -132,12 +138,16 @@ enum AlarmStates {
 Alarm currentAlarm;
 TheTime currentTime;
 AlarmStates alarmState;
+SdFat sd; // Create object to handle SD functions
+SFEMP3Shield MP3player; // Create Mp3 library object
 
 //Globals
 unsigned long targetMillis = 0;
 int timeSnoozing;
 bool alarmSwitch;
 bool snoozeButton;
+int masterVolume = 65;
+const uint16_t monoMode = 0;  // Mono setting 0 = stereo. 3 is max (no idea what max mono mode means though)
 
 void setup() {
   //Store the custom blocks on the LCD display
@@ -171,6 +181,10 @@ void setup() {
 
   //Initializes alarm state
   alarmState = Off;
+
+  //Initialize MP3 Player
+  initSD();
+  initMP3Player();
 
   targetMillis = TICK;  //Increment the target millisecond counter
 }
@@ -289,7 +303,7 @@ void CheckAlarm() {
       break;
      case Snoozing:
       if(timeSnoozing >= SNOOZETIME) {
-        PlayAlarm();
+        ResumeAlarm();
         alarmState = Alarming;
       }
       if(!alarmSwitch) { //Alarm is turned off
@@ -309,16 +323,26 @@ bool AlarmTime() {
 
 void PlayAlarm() {
   //play the music
-  //For now, just put an A in the corner
+  uint8_t result = MP3player.playTrack(1);
+  
+  //For now, also put an A in the corner so we have some visual
   lcd.setCursor(0,0);
   lcd.write("A");
 }
 
 void PauseAlarm() {
   //Pause the music (reset the volume?)
-  //For now just put an S in the corner
+  MP3player.pauseMusic();
+  //For now also put an S in the corner
   lcd.setCursor(0,0);
   lcd.write("S");
+}
+
+void ResumeAlarm() {
+  MP3player.resumeMusic();
+  //For now, also put an A in the corner so we have some visual
+  lcd.setCursor(0,0);
+  lcd.write("A");
 }
 
 void PrintBigDigit(int digit, int x) {
@@ -469,4 +493,25 @@ void Custom9(int x)
  lcd.write(5);
  lcd.write(255);
 }
+
+void initMP3Player() {
+  uint8_t result = MP3player.begin(); // init the mp3 player shield
+  if (result != 0) // check result, see readme for error codes.
+  {
+    Serial.println(result); //To do: handle errors here in some way?
+  }
+  union twobyte volume;  //creates a variable that can has a byte for the left and right ear volumes
+  volume.byte[LEFT] = masterVolume;        //Sets some starting values. 0 is full loudness, 255 is full quiet
+  volume.byte[RIGHT] = masterVolume;
+  MP3player.setVolume(volume.byte[LEFT], volume.byte[RIGHT]); //Pushes the new volumes onto the player
+  MP3player.setMonoMode(monoMode);  //Pushes mono settings
+}
+
+void initSD() {   //Code taken from the sparkfun example, not sure how it works.
+  //Initialize the SdCard.
+  if (!sd.begin(SD_SEL, SPI_FULL_SPEED)) sd.initErrorHalt();
+  // depending upon your SdCard environment, SPI_HAVE_SPEED may work better.
+  if (!sd.chdir("/")) sd.errorHalt("sd.chdir");
+}
+
 
