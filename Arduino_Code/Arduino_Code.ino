@@ -10,7 +10,7 @@
 
 #define TICK 1000  //1000 milliseconds (1 second)
 #define FARRIGHTCURSOR 15
-#define SNOOZETIME 9  //This will allow for 9 minutes of snoozing
+#define SNOOZETIME 2  //This will allow for X minutes of snoozing
 #define ALARMSWITCHPIN 7
 #define SNOOZEBUTTONPIN 8
 
@@ -105,7 +105,7 @@ byte AlarmBell[8] =
   B00000,
 };
 
-LiquidCrystal lcd(12, 11, 5, 4, 3, 2); //Establishes the LCD with proper pins
+LiquidCrystal lcd(A5, A4, A3, A2, A1, A0); //Establishes the LCD with proper pins
 
 //time variables
 typedef struct {
@@ -113,7 +113,6 @@ typedef struct {
   int minutes;
   int seconds;
   bool AM;
-  
 } TheTime;
 
 typedef struct {
@@ -156,17 +155,19 @@ void setup() {
   
   //Set up the lcd number of columns and rows.
   lcd.begin(16, 2);
-//  Serial.begin(9600); //For debugging
+  Serial.begin(9600); //For debugging
 
   //Initializes time
   currentTime.hours = 7;
   currentTime.minutes = 45;
-  currentTime.seconds = 59;
-  currentTime.AM = false;
+  currentTime.seconds = 30;
+  currentTime.AM = true;
+  PrintTime();
 
   //Initializes an alarm
   currentAlarm.hour = 7;
-  currentAlarm.minute = 0;
+  currentAlarm.minute = 46;
+  currentAlarm.AM = true;
 
   //Initializes alarm state
   alarmState = Off;
@@ -183,16 +184,20 @@ void loop() {
     targetMillis += TICK; 
   }
 
-  //Check the pins
+  //Check the pins (both are inverted because grounding is them being fired)
   alarmSwitch = !digitalRead(ALARMSWITCHPIN);
-  snoozeButton = digitalRead(SNOOZEBUTTONPIN);
+  snoozeButton = !digitalRead(SNOOZEBUTTONPIN);
+
+  //Check to see the alarm status
   CheckAlarm();
 }
 
 void UpdateMinute() {
   currentTime.seconds = 0;
   currentTime.minutes++;
-  timeSnoozing++;
+  if (alarmState == Snoozing) {
+    timeSnoozing++;
+  }
   if (currentTime.minutes >= 60) { //End of an hour
     currentTime.minutes = 0;
     currentTime.hours++;
@@ -304,10 +309,16 @@ bool AlarmTime() {
 
 void PlayAlarm() {
   //play the music
+  //For now, just put an A in the corner
+  lcd.setCursor(0,0);
+  lcd.write("A");
 }
 
 void PauseAlarm() {
   //Pause the music (reset the volume?)
+  //For now just put an S in the corner
+  lcd.setCursor(0,0);
+  lcd.write("S");
 }
 
 void PrintBigDigit(int digit, int x) {
