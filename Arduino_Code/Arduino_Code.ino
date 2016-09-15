@@ -1,9 +1,14 @@
+
 /* This code will run an alarm clock with a settable
     alarm time and clock time
     The alarm works by playing an MP3 from an MP3 shield
     and is meant to have a code adjustable snooze
 
     Uses code from: https://www.arduino.cc/en/Tutorial/HelloWorld
+    And encoder from: http://bildr.org/2012/08/rotary-encoder-arduino/
+    And character inspiration and code from: http://forum.arduino.cc/index.php?topic=8882.0
+    And Real Time Clock from: https://learn.adafruit.com/adafruit-ds3231-precision-rtc-breakout/downloads?view=all
+    Amp hookup guide: https://www.sparkfun.com/tutorials/392
 */
 
 //Includes for the display + MP3 player
@@ -20,7 +25,7 @@
 #define LEFT 0
 #define RIGHT 1
 
-//Inspired by the characters from http://forum.arduino.cc/index.php?topic=8882.0
+//Ink blobs that can be used to form numbers and symbols
 byte Colon[8] = 
 {
  B00000,
